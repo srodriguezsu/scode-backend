@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
 from app.auth import current_active_user
-from app.models import Skill, SkillCreate, SkillRead, SkillUpdate, User
+from app.models import Skill, SkillCreate, SkillRead, SkillUpdate, User, EmployeeSkillLink, Employee
 
 router = APIRouter(prefix="/skills", tags=["skills"])
 
@@ -93,3 +93,27 @@ async def update_skill(
     except Exception as e:
         await session.rollback()
         raise HTTPException(status_code=400, detail=str(e))
+
+@router.get("/{skill_id}/factors", response_model=List[str])
+async def read_skill_factors(
+    *,
+    session: AsyncSession = Depends(get_session),
+    skill_id: int,
+    current_user: User = Depends(current_active_user)
+):
+    skill = await session.get(Skill, skill_id)
+    if not skill or skill.tenant_id != current_user.tenant_id:
+        raise HTTPException(status_code=404, detail="Skill not found")
+        
+    result = await session.execute(
+        select(EmployeeSkillLink.factor)
+        .join(Employee, Employee.id == EmployeeSkillLink.employee_id)
+        .where(
+            EmployeeSkillLink.skill_id == skill_id,
+            Employee.tenant_id == current_user.tenant_id,
+            EmployeeSkillLink.factor.isnot(None)
+        )
+        .distinct()
+    )
+    factors = result.scalars().all()
+    return factors

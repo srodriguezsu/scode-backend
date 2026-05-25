@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
 from app.auth import current_active_user
-from app.models import Skill, SkillCreate, SkillRead, User
+from app.models import Skill, SkillCreate, SkillRead, SkillUpdate, User
 
 router = APIRouter(prefix="/skills", tags=["skills"])
 
@@ -68,3 +68,28 @@ async def delete_skill(
     await session.delete(skill)
     await session.commit()
     return {"ok": True}
+
+@router.patch("/{skill_id}", response_model=SkillRead)
+async def update_skill(
+    *,
+    session: AsyncSession = Depends(get_session),
+    skill_id: int,
+    skill_update: SkillUpdate,
+    current_user: User = Depends(current_active_user)
+):
+    skill = await session.get(Skill, skill_id)
+    if not skill or skill.tenant_id != current_user.tenant_id:
+        raise HTTPException(status_code=404, detail="Skill not found")
+    
+    skill_data = skill_update.model_dump(exclude_unset=True)
+    for key, value in skill_data.items():
+        setattr(skill, key, value)
+        
+    session.add(skill)
+    try:
+        await session.commit()
+        await session.refresh(skill)
+        return skill
+    except Exception as e:
+        await session.rollback()
+        raise HTTPException(status_code=400, detail=str(e))

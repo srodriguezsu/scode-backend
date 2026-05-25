@@ -57,6 +57,11 @@ class SkillRead(SkillBase):
     id: int
     tenant_id: str
 
+class SkillUpdate(SQLModel):
+    name: Optional[str] = None
+    type: Optional[SkillType] = None
+    factor_type: Optional[FactorType] = None
+
 
 class EmployeeBase(SQLModel):
     national_id: str = Field(sa_column=Column(String(15), nullable=False))

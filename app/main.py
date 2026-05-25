@@ -18,7 +18,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Employee Skill Matrix API",
+    title="SCODE API",
     description="REST API backend for grouping employees into optimized project teams.",
     version="1.0.0",
     lifespan=lifespan,
@@ -33,4 +33,4 @@ app.include_router(teams.router)
 
 @app.get("/", tags=["Health"])
 async def root():
-    return {"status": "ok", "message": "Welcome to the Employee Skill Matrix API"}
+    return {"status": "ok", "message": "Welcome to the SCODE API"}

@@ -39,35 +39,9 @@ pip install -r requirements.txt
 
 ### 4. Configure Environment Variables
 
-Create a `.env` file in the root directory (or `.env.local` for local development) with the following structure:
+Copy the `.env.example` file to `.env` and update the values accordingly:
 
-```env
-# Database Configuration
-DB_USER=your_db_user
-DB_PASSWORD=your_db_password
-DB_HOST=localhost
-DB_PORT=3306
-DB_NAME=scode_db
-```
-
-### 5. Database Setup
-
-**A. Using Alembic (Recommended for Migrations)**
-
-Run the following commands to create the necessary tables:
-
-```bash
-alembic upgrade head
-```
-
-**B. Direct MySQL Creation**
-If you prefer to create the database directly, ensure the database exists and run the schema script:
-
-```bash
-mysql -u <user> -p < <path/to/schema.sql>
-```
-
-### 6. Run the Server
+### 5. Run the Server
 
 Start the development server:
 

@@ -46,7 +46,7 @@ async def create_employee(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.get("/", response_model=List[EmployeeRead])
+@router.get("/", response_model=List[EmployeeReadWithSkills])
 async def read_employees(
     *, 
     session: AsyncSession = Depends(get_session),
@@ -54,10 +54,33 @@ async def read_employees(
 ):
     # List Endpoint: Query only records matching the tenant_id
     result = await session.execute(
-        select(Employee).where(Employee.tenant_id == current_user.tenant_id)
+        select(Employee)
+        .where(Employee.tenant_id == current_user.tenant_id)
+        .options(selectinload(Employee.skills))
     )
     employees = result.scalars().all()
-    return employees
+
+    if not employees:
+        return []
+
+    employee_ids = [e.id for e in employees]
+    link_result = await session.execute(
+        select(EmployeeSkillLink).where(EmployeeSkillLink.employee_id.in_(employee_ids))
+    )
+    links = link_result.scalars().all()
+    factor_map = {(link.employee_id, link.skill_id): link.factor for link in links}
+    
+    response = []
+    for emp in employees:
+        emp_dict = emp.model_dump()
+        skills_with_factor = []
+        for skill in emp.skills:
+            skill_dict = skill.model_dump()
+            skill_dict["factor"] = factor_map.get((emp.id, skill.id))
+            skills_with_factor.append(SkillWithFactor(**skill_dict))
+        response.append(EmployeeReadWithSkills(**emp_dict, skills=skills_with_factor))
+        
+    return response
 
 
 @router.get("/{employee_id}", response_model=EmployeeReadWithSkills)

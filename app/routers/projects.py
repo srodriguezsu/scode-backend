@@ -46,14 +46,16 @@ async def create_project(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.get("/", response_model=List[ProjectRead])
+@router.get("/", response_model=List[ProjectReadWithSkills])
 async def read_projects(
     *, 
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(current_active_user)
 ):
     result = await session.execute(
-        select(Project).where(Project.tenant_id == current_user.tenant_id)
+        select(Project)
+        .where(Project.tenant_id == current_user.tenant_id)
+        .options(selectinload(Project.skills))
     )
     projects = result.scalars().all()
     return projects

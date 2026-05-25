@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_session
+from app.auth import current_active_user
 from app.models import (
     Employee,
     EmployeeCreate,
@@ -14,6 +15,7 @@ from app.models import (
     Skill,
     SkillWithFactor,
     EmployeeReadWithSkills,
+    User,
 )
 
 router = APIRouter(prefix="/employees", tags=["employees"])
@@ -25,8 +27,16 @@ class EmployeeSkillAssign(SQLModel):
 
 
 @router.post("/", response_model=EmployeeRead)
-async def create_employee(*, session: AsyncSession = Depends(get_session), employee: EmployeeCreate):
+async def create_employee(
+    *, 
+    session: AsyncSession = Depends(get_session), 
+    employee: EmployeeCreate,
+    current_user: User = Depends(current_active_user)
+):
+    # Inject Multi-Tenancy: Force tenant_id to be the current user's tenant
     db_employee = Employee.model_validate(employee)
+    db_employee.tenant_id = current_user.tenant_id
+    
     session.add(db_employee)
     try:
         await session.commit()
@@ -38,30 +48,43 @@ async def create_employee(*, session: AsyncSession = Depends(get_session), emplo
 
 
 @router.get("/", response_model=List[EmployeeRead])
-async def read_employees(*, session: AsyncSession = Depends(get_session)):
-    result = await session.execute(select(Employee))
+async def read_employees(
+    *, 
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(current_active_user)
+):
+    # List Endpoint: Query only records matching the tenant_id
+    result = await session.execute(
+        select(Employee).where(Employee.tenant_id == current_user.tenant_id)
+    )
     employees = result.scalars().all()
     return employees
 
 
 @router.get("/{employee_id}", response_model=EmployeeReadWithSkills)
-async def read_employee(*, session: AsyncSession = Depends(get_session), employee_id: int):
-    # Eager load skills
+async def read_employee(
+    *, 
+    session: AsyncSession = Depends(get_session), 
+    employee_id: int,
+    current_user: User = Depends(current_active_user)
+):
     result = await session.execute(
-        select(Employee).where(Employee.id == employee_id).options(selectinload(Employee.skills))
+        select(Employee)
+        .where(Employee.id == employee_id, Employee.tenant_id == current_user.tenant_id)
+        .options(selectinload(Employee.skills))
     )
     employee = result.scalar_one_or_none()
+    
+    # Boundary Check: Return 404 if not found or belongs to another tenant
     if not employee:
         raise HTTPException(status_code=404, detail="Employee not found")
 
-    # Fetch factors for the skills
     link_result = await session.execute(
         select(EmployeeSkillLink).where(EmployeeSkillLink.employee_id == employee_id)
     )
     links = link_result.scalars().all()
     factor_map = {link.skill_id: link.factor for link in links}
 
-    # Construct the response
     employee_dict = employee.model_dump()
     skills_with_factor = []
     for skill in employee.skills:
@@ -74,10 +97,14 @@ async def read_employee(*, session: AsyncSession = Depends(get_session), employe
 
 @router.put("/{employee_id}", response_model=EmployeeRead)
 async def update_employee(
-    *, session: AsyncSession = Depends(get_session), employee_id: int, employee: EmployeeUpdate
+    *, 
+    session: AsyncSession = Depends(get_session), 
+    employee_id: int, 
+    employee: EmployeeUpdate,
+    current_user: User = Depends(current_active_user)
 ):
     db_employee = await session.get(Employee, employee_id)
-    if not db_employee:
+    if not db_employee or db_employee.tenant_id != current_user.tenant_id:
         raise HTTPException(status_code=404, detail="Employee not found")
     
     employee_data = employee.model_dump(exclude_unset=True)
@@ -95,9 +122,14 @@ async def update_employee(
 
 
 @router.delete("/{employee_id}")
-async def delete_employee(*, session: AsyncSession = Depends(get_session), employee_id: int):
+async def delete_employee(
+    *, 
+    session: AsyncSession = Depends(get_session), 
+    employee_id: int,
+    current_user: User = Depends(current_active_user)
+):
     db_employee = await session.get(Employee, employee_id)
-    if not db_employee:
+    if not db_employee or db_employee.tenant_id != current_user.tenant_id:
         raise HTTPException(status_code=404, detail="Employee not found")
         
     await session.delete(db_employee)
@@ -107,13 +139,16 @@ async def delete_employee(*, session: AsyncSession = Depends(get_session), emplo
 
 @router.post("/{employee_id}/skills")
 async def assign_skills_to_employee(
-    *, session: AsyncSession = Depends(get_session), employee_id: int, skills: List[EmployeeSkillAssign]
+    *, 
+    session: AsyncSession = Depends(get_session), 
+    employee_id: int, 
+    skills: List[EmployeeSkillAssign],
+    current_user: User = Depends(current_active_user)
 ):
     db_employee = await session.get(Employee, employee_id)
-    if not db_employee:
+    if not db_employee or db_employee.tenant_id != current_user.tenant_id:
         raise HTTPException(status_code=404, detail="Employee not found")
 
-    # Remove existing skills (or just specific ones, here we do full sync for simplicity)
     existing_links_result = await session.execute(
         select(EmployeeSkillLink).where(EmployeeSkillLink.employee_id == employee_id)
     )
@@ -121,11 +156,10 @@ async def assign_skills_to_employee(
     for link in existing_links:
         await session.delete(link)
 
-    # Validate and add new skills
     for s in skills:
         db_skill = await session.get(Skill, s.skill_id)
-        if not db_skill:
-            raise HTTPException(status_code=404, detail=f"Skill {s.skill_id} not found")
+        if not db_skill or db_skill.tenant_id != current_user.tenant_id:
+            raise HTTPException(status_code=404, detail=f"Skill {s.skill_id} not found in your tenant")
             
         new_link = EmployeeSkillLink(employee_id=employee_id, skill_id=s.skill_id, factor=s.factor)
         session.add(new_link)

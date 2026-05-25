@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_session
+from app.auth import current_active_user
 from app.models import (
     Project,
     ProjectCreate,
@@ -16,6 +17,7 @@ from app.models import (
     Team,
     TeamReadWithMembers,
     ProjectReadWithSkills,
+    User,
 )
 
 router = APIRouter(prefix="/projects", tags=["projects"])
@@ -26,8 +28,15 @@ class ProjectSkillAssign(SQLModel):
 
 
 @router.post("/", response_model=ProjectRead)
-async def create_project(*, session: AsyncSession = Depends(get_session), project: ProjectCreate):
+async def create_project(
+    *, 
+    session: AsyncSession = Depends(get_session), 
+    project: ProjectCreate,
+    current_user: User = Depends(current_active_user)
+):
     db_project = Project.model_validate(project)
+    db_project.tenant_id = current_user.tenant_id
+    
     session.add(db_project)
     try:
         await session.commit()
@@ -39,17 +48,29 @@ async def create_project(*, session: AsyncSession = Depends(get_session), projec
 
 
 @router.get("/", response_model=List[ProjectRead])
-async def read_projects(*, session: AsyncSession = Depends(get_session)):
-    result = await session.execute(select(Project))
+async def read_projects(
+    *, 
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(current_active_user)
+):
+    result = await session.execute(
+        select(Project).where(Project.tenant_id == current_user.tenant_id)
+    )
     projects = result.scalars().all()
     return projects
 
 
 @router.get("/{project_id}", response_model=ProjectReadWithSkills)
-async def read_project(*, session: AsyncSession = Depends(get_session), project_id: int):
-    # Eager load skills
+async def read_project(
+    *, 
+    session: AsyncSession = Depends(get_session), 
+    project_id: int,
+    current_user: User = Depends(current_active_user)
+):
     result = await session.execute(
-        select(Project).where(Project.id == project_id).options(selectinload(Project.skills))
+        select(Project)
+        .where(Project.id == project_id, Project.tenant_id == current_user.tenant_id)
+        .options(selectinload(Project.skills))
     )
     project = result.scalar_one_or_none()
     if not project:
@@ -60,10 +81,14 @@ async def read_project(*, session: AsyncSession = Depends(get_session), project_
 
 @router.put("/{project_id}", response_model=ProjectRead)
 async def update_project(
-    *, session: AsyncSession = Depends(get_session), project_id: int, project: ProjectUpdate
+    *, 
+    session: AsyncSession = Depends(get_session), 
+    project_id: int, 
+    project: ProjectUpdate,
+    current_user: User = Depends(current_active_user)
 ):
     db_project = await session.get(Project, project_id)
-    if not db_project:
+    if not db_project or db_project.tenant_id != current_user.tenant_id:
         raise HTTPException(status_code=404, detail="Project not found")
     
     project_data = project.model_dump(exclude_unset=True)
@@ -81,9 +106,14 @@ async def update_project(
 
 
 @router.delete("/{project_id}")
-async def delete_project(*, session: AsyncSession = Depends(get_session), project_id: int):
+async def delete_project(
+    *, 
+    session: AsyncSession = Depends(get_session), 
+    project_id: int,
+    current_user: User = Depends(current_active_user)
+):
     db_project = await session.get(Project, project_id)
-    if not db_project:
+    if not db_project or db_project.tenant_id != current_user.tenant_id:
         raise HTTPException(status_code=404, detail="Project not found")
         
     await session.delete(db_project)
@@ -93,13 +123,16 @@ async def delete_project(*, session: AsyncSession = Depends(get_session), projec
 
 @router.post("/{project_id}/skills")
 async def assign_skills_to_project(
-    *, session: AsyncSession = Depends(get_session), project_id: int, skills: List[ProjectSkillAssign]
+    *, 
+    session: AsyncSession = Depends(get_session), 
+    project_id: int, 
+    skills: List[ProjectSkillAssign],
+    current_user: User = Depends(current_active_user)
 ):
     db_project = await session.get(Project, project_id)
-    if not db_project:
+    if not db_project or db_project.tenant_id != current_user.tenant_id:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    # Remove existing skills (or just specific ones, doing full sync for simplicity)
     existing_links_result = await session.execute(
         select(ProjectSkillLink).where(ProjectSkillLink.project_id == project_id)
     )
@@ -107,13 +140,11 @@ async def assign_skills_to_project(
     for link in existing_links:
         await session.delete(link)
 
-    # Validate and add new skills
     for s in skills:
         db_skill = await session.get(Skill, s.skill_id)
-        if not db_skill:
-            raise HTTPException(status_code=404, detail=f"Skill {s.skill_id} not found")
+        if not db_skill or db_skill.tenant_id != current_user.tenant_id:
+            raise HTTPException(status_code=404, detail=f"Skill {s.skill_id} not found in your tenant")
         
-        # Verify that it is a hard skill (from DBML note)
         if db_skill.type != SkillType.hard:
             raise HTTPException(
                 status_code=400, 
@@ -132,15 +163,19 @@ async def assign_skills_to_project(
 
 
 @router.get("/{project_id}/teams", response_model=List[TeamReadWithMembers])
-async def read_project_teams(*, session: AsyncSession = Depends(get_session), project_id: int):
+async def read_project_teams(
+    *, 
+    session: AsyncSession = Depends(get_session), 
+    project_id: int,
+    current_user: User = Depends(current_active_user)
+):
     db_project = await session.get(Project, project_id)
-    if not db_project:
+    if not db_project or db_project.tenant_id != current_user.tenant_id:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    # Fetch teams for this project and eager load their members
     result = await session.execute(
         select(Team)
-        .where(Team.project_id == project_id)
+        .where(Team.project_id == project_id, Team.tenant_id == current_user.tenant_id)
         .options(selectinload(Team.members))
     )
     teams = result.scalars().all()

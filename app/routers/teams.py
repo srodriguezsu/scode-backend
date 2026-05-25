@@ -35,8 +35,7 @@ async def create_team(
     if not project or project.tenant_id != current_user.tenant_id:
         raise HTTPException(status_code=404, detail=f"Project {team.project_id} not found in your tenant")
 
-    db_team = Team.model_validate(team)
-    db_team.tenant_id = current_user.tenant_id
+    db_team = Team.model_validate(team, update={"tenant_id": current_user.tenant_id})
     
     session.add(db_team)
     try:

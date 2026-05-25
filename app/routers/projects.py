@@ -34,8 +34,7 @@ async def create_project(
     project: ProjectCreate,
     current_user: User = Depends(current_active_user)
 ):
-    db_project = Project.model_validate(project)
-    db_project.tenant_id = current_user.tenant_id
+    db_project = Project.model_validate(project, update={"tenant_id": current_user.tenant_id})
     
     session.add(db_project)
     try:

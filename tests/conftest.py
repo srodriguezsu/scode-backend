@@ -8,8 +8,7 @@ from sqlmodel import SQLModel
 from app.main import app
 from app.database import get_session
 
-# Use in-memory SQLite for testing. StaticPool is required to maintain the
-# database in memory across connections.
+# Use in-memory SQLite for testing
 DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
 engine = create_async_engine(
@@ -24,21 +23,17 @@ TestingSessionLocal = sessionmaker(
 
 @pytest.fixture(scope="session", autouse=True)
 async def setup_db():
-    # Setup the tables once for the test session
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
     yield
-    # We could drop tables here if it wasn't in-memory
 
 @pytest.fixture
 async def session():
     async with TestingSessionLocal() as session:
         yield session
-        # Optionally rollback any uncommitted transactions or clear tables here
 
 @pytest.fixture
-async def client(session: AsyncSession):
-    # Dependency override
+async def unauth_client(session: AsyncSession):
     async def override_get_session():
         yield session
 
@@ -48,5 +43,39 @@ async def client(session: AsyncSession):
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
         
-    # Clear overrides
     app.dependency_overrides.clear()
+
+async def get_authenticated_client(unauth_client: AsyncClient, email: str, password: str, tenant_id: str = None):
+    # Register
+    payload = {"email": email, "password": password}
+    if tenant_id:
+        payload["tenant_id"] = tenant_id
+    await unauth_client.post("/auth/register", json=payload)
+    
+    # Login
+    login_resp = await unauth_client.post(
+        "/auth/jwt/login", 
+        data={"username": email, "password": password}
+    )
+    token = login_resp.json()["access_token"]
+    
+    # Create authenticated client
+    transport = ASGITransport(app=app)
+    client = AsyncClient(
+        transport=transport, 
+        base_url="http://test",
+        headers={"Authorization": f"Bearer {token}"}
+    )
+    return client
+
+@pytest.fixture
+async def auth_client(unauth_client: AsyncClient):
+    client = await get_authenticated_client(unauth_client, "user1@example.com", "password", "tenant_a")
+    yield client
+    await client.aclose()
+
+@pytest.fixture
+async def auth_client_2(unauth_client: AsyncClient):
+    client = await get_authenticated_client(unauth_client, "user2@example.com", "password", "tenant_b")
+    yield client
+    await client.aclose()

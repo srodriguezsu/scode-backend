@@ -17,8 +17,7 @@ async def create_skill(
     skill: SkillCreate,
     current_user: User = Depends(current_active_user)
 ):
-    db_skill = Skill.model_validate(skill)
-    db_skill.tenant_id = current_user.tenant_id
+    db_skill = Skill.model_validate(skill, update={"tenant_id": current_user.tenant_id})
     
     session.add(db_skill)
     try:

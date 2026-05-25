@@ -34,8 +34,7 @@ async def create_employee(
     current_user: User = Depends(current_active_user)
 ):
     # Inject Multi-Tenancy: Force tenant_id to be the current user's tenant
-    db_employee = Employee.model_validate(employee)
-    db_employee.tenant_id = current_user.tenant_id
+    db_employee = Employee.model_validate(employee, update={"tenant_id": current_user.tenant_id})
     
     session.add(db_employee)
     try:

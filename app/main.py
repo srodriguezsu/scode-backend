@@ -1,6 +1,11 @@
 from contextlib import asynccontextmanager
+import os
+from dotenv import load_dotenv
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import SQLModel
+
+load_dotenv()
 
 from app.database import engine
 from app.routers import employees, projects, teams, skills
@@ -23,6 +28,17 @@ app = FastAPI(
     description="REST API backend for grouping employees into optimized project teams.",
     version="1.0.0",
     lifespan=lifespan,
+)
+
+cors_origins_str = os.getenv("CORS_ORIGINS", "*")
+cors_origins = [origin.strip() for origin in cors_origins_str.split(";") if origin.strip()]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=cors_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Include Auth Routers

@@ -1,0 +1,54 @@
+table projects {
+  id int [pk]
+
+  name varchar(50)
+  description varchar(255)
+
+  max_teams int(2)
+  min_team_size int(2)
+  max_team_size int(2)
+
+  created_at datetime [not null]
+  updated_at datetime [not null]
+}
+
+table teams {
+  id int [pk]
+
+  project_id int [ref:> projects.id, not null]
+
+  created_at datetime [not null, default: "NOW()"]
+}
+
+table team_members {
+  team_id int [ref:>teams.id]
+  employee_id int [ref:> employees.id]
+
+}
+
+table employees {
+  id int [pk] 
+
+  national_id varchar(15) [unique, not null]
+
+  name varchar
+  last_name varchar
+}
+
+table employee_skill {
+  employee_id int [ref:> employees.id]
+  skill_id int [ref:> skills.id]
+  factor varchar(10)
+}
+
+table project_skill {
+  project_id int [ref:> projects.id]
+  skill_id int [ref:> skills.id, note: "Must only be hard skill"] 
+}
+
+table skills {
+  id int [pk]  
+  name varchar [unique, not null]
+  type enum("hard", "soft")
+  factor_type enum("numeric", "categorical")
+}

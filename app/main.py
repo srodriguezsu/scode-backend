@@ -31,15 +31,26 @@ app = FastAPI(
 )
 
 cors_origins_str = os.getenv("CORS_ORIGINS", "*")
-cors_origins = [origin.strip() for origin in cors_origins_str.split(";") if origin.strip()]
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=cors_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+if cors_origins_str == "*":
+    # The CORS specification doesn't allow `allow_origins=["*"]` with `allow_credentials=True`.
+    # To allow any origin during development while keeping credentials, we use a regex that matches anything.
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origin_regex=".*",
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    cors_origins = [origin.strip() for origin in cors_origins_str.split(";") if origin.strip()]
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 # Include Auth Routers
 app.include_router(

@@ -1,0 +1,17 @@
+.env
+.env.*
+.venv/
+.git/
+.gitignore
+.idea/
+.pytest_cache/
+.vscode/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+pytest.ini
+tests/
+database.dbdiagram
+database.dbml
+README.md

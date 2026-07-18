@@ -13,7 +13,7 @@ engine = create_async_engine(
     DATABASE_URL,
     echo=True,  # Log SQL queries (disable in production)
     future=True,
-    ool_recycle=1800,       # Recycle connections older than 30 minutes
+    pool_recycle=1800,       # Recycle connections older than 30 minutes
     pool_pre_ping=True,       # Opt: Test connections before using them
     pool_size=10,             # Keep pool size reasonable
     max_overflow=20

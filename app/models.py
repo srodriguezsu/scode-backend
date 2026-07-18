@@ -137,7 +137,7 @@ class Team(TeamBase, table=True):
     members: List[Employee] = Relationship(back_populates="teams", link_model=TeamMemberLink)
 
 class TeamCreate(TeamBase):
-    pass
+    employee_ids: Optional[List[int]] = None
 
 class TeamRead(TeamBase):
     id: int

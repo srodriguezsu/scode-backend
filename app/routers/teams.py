@@ -24,7 +24,7 @@ class TeamMemberAssign(SQLModel):
     employee_id: int
 
 
-@router.post("/", response_model=TeamRead)
+@router.post("/", response_model=TeamReadWithMembers)
 async def create_team(
     *, 
     session: AsyncSession = Depends(get_session), 
@@ -35,13 +35,34 @@ async def create_team(
     if not project or project.tenant_id != current_user.tenant_id:
         raise HTTPException(status_code=404, detail=f"Project {team.project_id} not found in your tenant")
 
-    db_team = Team.model_validate(team, update={"tenant_id": current_user.tenant_id})
+    # Verify all employees belong to the tenant before doing any DB write
+    employee_ids = team.employee_ids or []
+    for emp_id in employee_ids:
+        emp = await session.get(Employee, emp_id)
+        if not emp or emp.tenant_id != current_user.tenant_id:
+            raise HTTPException(status_code=404, detail=f"Employee {emp_id} not found in your tenant")
+
+    team_dict = team.model_dump(exclude={"employee_ids"})
+    db_team = Team.model_validate(team_dict, update={"tenant_id": current_user.tenant_id})
     
     session.add(db_team)
     try:
+        await session.flush()
+        team_id = db_team.id
+        
+        for emp_id in employee_ids:
+            new_link = TeamMemberLink(team_id=team_id, employee_id=emp_id)
+            session.add(new_link)
+
         await session.commit()
-        await session.refresh(db_team)
-        return db_team
+
+        # Query team back with members loaded
+        result = await session.execute(
+            select(Team)
+            .where(Team.id == team_id)
+            .options(selectinload(Team.members))
+        )
+        return result.scalar_one()
     except Exception as e:
         await session.rollback()
         raise HTTPException(status_code=400, detail=str(e))

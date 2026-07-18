@@ -149,17 +149,44 @@ async def test_employee_filtering_by_hard_skills(auth_client: AsyncClient):
     assert len(employees) == 0
 
     # 8. Test filtering: combination of hard skill and soft skill with match_all=True (default)
-    # Since one of the requested skill IDs is a soft skill, match_all=True should yield 0 results.
+    # Since we passed a soft skill ID to a hard skill parameter, it's considered invalid for that type.
     resp = await auth_client.get(f"/employees/?skill_ids={fastapi_id},{comm_id}")
     assert resp.status_code == 200
     employees = resp.json()
     assert len(employees) == 0
 
     # 9. Test filtering: combination of hard skill and soft skill with match_all=False
-    # Since match_all=False, the soft skill is ignored but the hard skill FastAPI matches Alice.
+    # Since match_all=False, the soft skill is ignored (since it's in a hard-skill param) but the hard skill FastAPI matches Alice.
     resp = await auth_client.get(f"/employees/?skill_ids={fastapi_id},{comm_id}&match_all=false")
     assert resp.status_code == 200
     employees = resp.json()
     assert len(employees) == 1
     assert employees[0]["id"] == alice_id
+
+    # 10. Test filtering: specifically soft skills
+    resp = await auth_client.get(f"/employees/?soft_skills_ids={comm_id}")
+    assert resp.status_code == 200
+    employees = resp.json()
+    assert len(employees) == 2
+    employee_ids = {e["id"] for e in employees}
+    assert employee_ids == {bob_id, charlie_id}
+
+    # 11. Test filtering: combination of hard skill and soft skill using separate parameters with match_all=True
+    # Alice: FastAPI, React (no Communication)
+    # Bob: React, Communication (has both React and Communication)
+    # Charlie: Communication (no React)
+    resp = await auth_client.get(f"/employees/?hard_skills_ids={react_id}&soft_skills_ids={comm_id}&match_all=true")
+    assert resp.status_code == 200
+    employees = resp.json()
+    assert len(employees) == 1
+    assert employees[0]["id"] == bob_id
+
+    # 12. Test filtering: combination of hard skill and soft skill using separate parameters with match_all=False
+    # Matches Alice (has React), Bob (has both), and Charlie (has Communication)
+    resp = await auth_client.get(f"/employees/?hard_skills_ids={react_id}&soft_skills_ids={comm_id}&match_all=false")
+    assert resp.status_code == 200
+    employees = resp.json()
+    assert len(employees) == 3
+    employee_ids = {e["id"] for e in employees}
+    assert employee_ids == {alice_id, bob_id, charlie_id}
 

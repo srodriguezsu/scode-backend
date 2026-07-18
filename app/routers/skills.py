@@ -1,11 +1,21 @@
-from typing import List
-from fastapi import APIRouter, Depends, HTTPException
+from typing import List, Optional
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
 from app.auth import current_active_user
-from app.models import Skill, SkillCreate, SkillRead, SkillUpdate, User, EmployeeSkillLink, Employee, ProjectSkillLink
+from app.models import (
+    Skill,
+    SkillCreate,
+    SkillRead,
+    SkillUpdate,
+    User,
+    EmployeeSkillLink,
+    Employee,
+    ProjectSkillLink,
+    SkillType,
+)
 
 router = APIRouter(prefix="/skills", tags=["skills"])
 
@@ -33,11 +43,14 @@ async def create_skill(
 async def read_skills(
     *, 
     session: AsyncSession = Depends(get_session),
+    type: Optional[SkillType] = Query(None, description="Filter skills by type ('hard' or 'soft')"),
     current_user: User = Depends(current_active_user)
 ):
-    result = await session.execute(
-        select(Skill).where(Skill.tenant_id == current_user.tenant_id)
-    )
+    query = select(Skill).where(Skill.tenant_id == current_user.tenant_id)
+    if type:
+        query = query.where(Skill.type == type)
+        
+    result = await session.execute(query)
     skills = result.scalars().all()
     return skills
 

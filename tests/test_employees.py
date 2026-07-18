@@ -181,12 +181,26 @@ async def test_employee_filtering_by_hard_skills(auth_client: AsyncClient):
     assert len(employees) == 1
     assert employees[0]["id"] == bob_id
 
-    # 12. Test filtering: combination of hard skill and soft skill using separate parameters with match_all=False
-    # Matches Alice (has React), Bob (has both), and Charlie (has Communication)
+    # 12. Test filtering: combination of hard skill and soft skill using separate parameters with match_all=False.
+    # Note: Category filters are joined by AND, but each category is match_all=False (any).
+    # Since each has only 1 skill, this requires (React) AND (Communication), which matches only Bob.
     resp = await auth_client.get(f"/employees/?hard_skills_ids={react_id}&soft_skills_ids={comm_id}&match_all=false")
     assert resp.status_code == 200
     employees = resp.json()
-    assert len(employees) == 3
-    employee_ids = {e["id"] for e in employees}
-    assert employee_ids == {alice_id, bob_id, charlie_id}
+    assert len(employees) == 1
+    assert employees[0]["id"] == bob_id
+
+    # 13. Test filtering: match_all_hard and match_all_soft independent parameters
+    # Alice: FastAPI, React (has both hard, no soft)
+    # Bob: React, Communication (has 1 hard, 1 soft)
+    # Query: Has either React or FastAPI (match_all_hard=false) AND has Communication (match_all_soft=true)
+    # This should match Bob.
+    resp = await auth_client.get(
+        f"/employees/?hard_skills_ids={react_id},{fastapi_id}&match_all_hard=false"
+        f"&soft_skills_ids={comm_id}&match_all_soft=true"
+    )
+    assert resp.status_code == 200
+    employees = resp.json()
+    assert len(employees) == 1
+    assert employees[0]["id"] == bob_id
 

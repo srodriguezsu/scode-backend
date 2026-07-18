@@ -57,6 +57,8 @@ async def read_employees(
     hard_skills_ids: Optional[List[str]] = Query(None),
     soft_skills_ids: Optional[List[str]] = Query(None),
     match_all: bool = Query(True),
+    match_all_hard: Optional[bool] = Query(None),
+    match_all_soft: Optional[bool] = Query(None),
     current_user: User = Depends(current_active_user)
 ):
     # List Endpoint: Query only records matching the tenant_id
@@ -65,6 +67,10 @@ async def read_employees(
         .where(Employee.tenant_id == current_user.tenant_id)
         .options(selectinload(Employee.skills))
     )
+
+    # Resolve match_all fallbacks
+    actual_match_all_hard = match_all_hard if match_all_hard is not None else match_all
+    actual_match_all_soft = match_all_soft if match_all_soft is not None else match_all
 
     # Process and parse hard skill IDs (supporting both ?skill_ids=1&skill_ids=2 and ?skill_ids=1,2)
     raw_hard_ids = []
@@ -92,55 +98,67 @@ async def read_employees(
             if part.isdigit():
                 actual_soft_ids.append(int(part))
 
-    if actual_hard_ids or actual_soft_ids:
-        valid_skill_ids = []
-        total_requested_count = len(set(actual_hard_ids)) + len(set(actual_soft_ids))
+    # Apply hard skills filter if requested
+    if actual_hard_ids:
+        hard_skills_query = await session.execute(
+            select(Skill.id)
+            .where(Skill.id.in_(actual_hard_ids))
+            .where(Skill.tenant_id == current_user.tenant_id)
+            .where(Skill.type == SkillType.hard)
+        )
+        valid_hard_ids = hard_skills_query.scalars().all()
 
-        # Validate hard skills
-        if actual_hard_ids:
-            hard_skills_query = await session.execute(
-                select(Skill.id)
-                .where(Skill.id.in_(actual_hard_ids))
-                .where(Skill.tenant_id == current_user.tenant_id)
-                .where(Skill.type == SkillType.hard)
-            )
-            valid_hard_ids = hard_skills_query.scalars().all()
-            valid_skill_ids.extend(valid_hard_ids)
-
-        # Validate soft skills
-        if actual_soft_ids:
-            soft_skills_query = await session.execute(
-                select(Skill.id)
-                .where(Skill.id.in_(actual_soft_ids))
-                .where(Skill.tenant_id == current_user.tenant_id)
-                .where(Skill.type == SkillType.soft)
-            )
-            valid_soft_ids = soft_skills_query.scalars().all()
-            valid_skill_ids.extend(valid_soft_ids)
-
-        # If match_all is True but some requested skill IDs are not valid for their respective type/tenant,
-        # no employee can possess all of them.
-        if match_all and len(valid_skill_ids) != total_requested_count:
+        if actual_match_all_hard and len(valid_hard_ids) != len(set(actual_hard_ids)):
+            # If match_all_hard is True but some requested skill IDs are not valid hard skills for the tenant, return empty
             return []
 
-        if not valid_skill_ids:
-            # If match_all is False and none of the IDs are valid for their respective type, return no employees
+        if not valid_hard_ids:
             return []
 
-        if match_all:
-            # Must possess ALL specified skills
+        if actual_match_all_hard:
             subquery = (
                 select(EmployeeSkillLink.employee_id)
-                .where(EmployeeSkillLink.skill_id.in_(valid_skill_ids))
+                .where(EmployeeSkillLink.skill_id.in_(valid_hard_ids))
                 .group_by(EmployeeSkillLink.employee_id)
-                .having(func.count(EmployeeSkillLink.skill_id.distinct()) == len(valid_skill_ids))
+                .having(func.count(EmployeeSkillLink.skill_id.distinct()) == len(valid_hard_ids))
             )
             query = query.where(Employee.id.in_(subquery))
         else:
-            # Must possess ANY of the specified skills
             subquery = (
                 select(EmployeeSkillLink.employee_id)
-                .where(EmployeeSkillLink.skill_id.in_(valid_skill_ids))
+                .where(EmployeeSkillLink.skill_id.in_(valid_hard_ids))
+            )
+            query = query.where(Employee.id.in_(subquery))
+
+    # Apply soft skills filter if requested
+    if actual_soft_ids:
+        soft_skills_query = await session.execute(
+            select(Skill.id)
+            .where(Skill.id.in_(actual_soft_ids))
+            .where(Skill.tenant_id == current_user.tenant_id)
+            .where(Skill.type == SkillType.soft)
+        )
+        valid_soft_ids = soft_skills_query.scalars().all()
+
+        if actual_match_all_soft and len(valid_soft_ids) != len(set(actual_soft_ids)):
+            # If match_all_soft is True but some requested skill IDs are not valid soft skills for the tenant, return empty
+            return []
+
+        if not valid_soft_ids:
+            return []
+
+        if actual_match_all_soft:
+            subquery = (
+                select(EmployeeSkillLink.employee_id)
+                .where(EmployeeSkillLink.skill_id.in_(valid_soft_ids))
+                .group_by(EmployeeSkillLink.employee_id)
+                .having(func.count(EmployeeSkillLink.skill_id.distinct()) == len(valid_soft_ids))
+            )
+            query = query.where(Employee.id.in_(subquery))
+        else:
+            subquery = (
+                select(EmployeeSkillLink.employee_id)
+                .where(EmployeeSkillLink.skill_id.in_(valid_soft_ids))
             )
             query = query.where(Employee.id.in_(subquery))
 

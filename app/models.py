@@ -125,6 +125,7 @@ class ProjectRead(ProjectBase):
 
 class TeamBase(SQLModel):
     project_id: int = Field(foreign_key="projects.id", nullable=False)
+    predicted_cohesion_index: Optional[float] = None
 
 class Team(TeamBase, table=True):
     __tablename__ = "teams"

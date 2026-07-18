@@ -16,6 +16,7 @@ table teams {
   id int [pk]
 
   project_id int [ref:> projects.id, not null]
+  predicted_cohesion_index float
 
   created_at datetime [not null, default: "NOW()"]
 }

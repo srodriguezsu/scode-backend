@@ -119,3 +119,24 @@ async def add_members_to_team(
     except Exception as e:
         await session.rollback()
         raise HTTPException(status_code=400, detail=str(e))
+
+@router.delete("/{team_id}")
+async def delete_team(
+    *, 
+    session: AsyncSession = Depends(get_session), 
+    team_id: int,
+    current_user: User = Depends(current_active_user)
+):
+    db_team = await session.get(Team, team_id)
+    if not db_team or db_team.tenant_id != current_user.tenant_id:
+        raise HTTPException(status_code=404, detail="Team not found")
+
+    team_links = await session.execute(
+        select(TeamMemberLink).where(TeamMemberLink.team_id == team_id)
+    )
+    for link in team_links.scalars().all():
+        await session.delete(link)
+
+    await session.delete(db_team)
+    await session.commit()
+    return {"ok": True}

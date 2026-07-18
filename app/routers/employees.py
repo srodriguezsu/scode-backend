@@ -12,6 +12,7 @@ from app.models import (
     EmployeeRead,
     EmployeeUpdate,
     EmployeeSkillLink,
+    TeamMemberLink,
     Skill,
     SkillWithFactor,
     EmployeeReadWithSkills,
@@ -154,6 +155,18 @@ async def delete_employee(
     if not db_employee or db_employee.tenant_id != current_user.tenant_id:
         raise HTTPException(status_code=404, detail="Employee not found")
         
+    skill_links = await session.execute(
+        select(EmployeeSkillLink).where(EmployeeSkillLink.employee_id == employee_id)
+    )
+    for link in skill_links.scalars().all():
+        await session.delete(link)
+        
+    team_links = await session.execute(
+        select(TeamMemberLink).where(TeamMemberLink.employee_id == employee_id)
+    )
+    for link in team_links.scalars().all():
+        await session.delete(link)
+
     await session.delete(db_employee)
     await session.commit()
     return {"ok": True}

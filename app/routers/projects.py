@@ -18,6 +18,7 @@ from app.models import (
     TeamReadWithMembers,
     ProjectReadWithSkills,
     User,
+    TeamMemberLink,
 )
 
 router = APIRouter(prefix="/projects", tags=["projects"])
@@ -117,6 +118,23 @@ async def delete_project(
     if not db_project or db_project.tenant_id != current_user.tenant_id:
         raise HTTPException(status_code=404, detail="Project not found")
         
+    skill_links = await session.execute(
+        select(ProjectSkillLink).where(ProjectSkillLink.project_id == project_id)
+    )
+    for link in skill_links.scalars().all():
+        await session.delete(link)
+
+    teams_result = await session.execute(
+        select(Team).where(Team.project_id == project_id)
+    )
+    for team in teams_result.scalars().all():
+        team_links = await session.execute(
+            select(TeamMemberLink).where(TeamMemberLink.team_id == team.id)
+        )
+        for link in team_links.scalars().all():
+            await session.delete(link)
+        await session.delete(team)
+
     await session.delete(db_project)
     await session.commit()
     return {"ok": True}

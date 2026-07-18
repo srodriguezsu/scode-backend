@@ -1,6 +1,7 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import select, SQLModel
+from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -17,6 +18,7 @@ from app.models import (
     SkillWithFactor,
     EmployeeReadWithSkills,
     User,
+    SkillType,
 )
 
 router = APIRouter(prefix="/employees", tags=["employees"])
@@ -51,14 +53,69 @@ async def create_employee(
 async def read_employees(
     *, 
     session: AsyncSession = Depends(get_session),
+    skill_ids: Optional[List[str]] = Query(None),
+    hard_skills_ids: Optional[List[str]] = Query(None),
+    match_all: bool = Query(True),
     current_user: User = Depends(current_active_user)
 ):
     # List Endpoint: Query only records matching the tenant_id
-    result = await session.execute(
+    query = (
         select(Employee)
         .where(Employee.tenant_id == current_user.tenant_id)
         .options(selectinload(Employee.skills))
     )
+
+    # Process and parse skill IDs (supporting both ?skill_ids=1&skill_ids=2 and ?skill_ids=1,2)
+    raw_ids = []
+    if skill_ids:
+        raw_ids.extend(skill_ids)
+    if hard_skills_ids:
+        raw_ids.extend(hard_skills_ids)
+
+    actual_ids = []
+    for item in raw_ids:
+        for part in item.split(","):
+            part = part.strip()
+            if part.isdigit():
+                actual_ids.append(int(part))
+
+    if actual_ids:
+        # Verify that all skill_ids are valid hard skills for the current tenant
+        skills_query = await session.execute(
+            select(Skill.id)
+            .where(Skill.id.in_(actual_ids))
+            .where(Skill.tenant_id == current_user.tenant_id)
+            .where(Skill.type == SkillType.hard)
+        )
+        valid_hard_skill_ids = skills_query.scalars().all()
+
+        if match_all and len(valid_hard_skill_ids) != len(set(actual_ids)):
+            # If match_all is True but some requested skill IDs are not valid hard skills for the tenant,
+            # no employee can possess all of them.
+            return []
+
+        if not valid_hard_skill_ids:
+            # If match_all is False and none of the IDs are valid hard skills, then no employee matches.
+            return []
+
+        if match_all:
+            # Must possess ALL specified hard skills
+            subquery = (
+                select(EmployeeSkillLink.employee_id)
+                .where(EmployeeSkillLink.skill_id.in_(valid_hard_skill_ids))
+                .group_by(EmployeeSkillLink.employee_id)
+                .having(func.count(EmployeeSkillLink.skill_id.distinct()) == len(valid_hard_skill_ids))
+            )
+            query = query.where(Employee.id.in_(subquery))
+        else:
+            # Must possess ANY of the specified hard skills
+            subquery = (
+                select(EmployeeSkillLink.employee_id)
+                .where(EmployeeSkillLink.skill_id.in_(valid_hard_skill_ids))
+            )
+            query = query.where(Employee.id.in_(subquery))
+
+    result = await session.execute(query)
     employees = result.scalars().all()
 
     if not employees:

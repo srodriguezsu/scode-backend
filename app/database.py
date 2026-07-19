@@ -1,4 +1,5 @@
 import os
+from sqlalchemy import NullPool
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -11,12 +12,9 @@ DATABASE_URL = os.getenv(
 # Create the async engine
 engine = create_async_engine(
     DATABASE_URL,
-    echo=True,  # Log SQL queries (disable in production)
-    future=True,
-    pool_recycle=1800,       # Recycle connections older than 30 minutes
-    pool_pre_ping=True,       # Opt: Test connections before using them
-    pool_size=10,             # Keep pool size reasonable
-    max_overflow=20
+    echo=False,         # Ensure this is False in production to save Cloud Run log overhead
+    future=True,        # Keep if using SQLAlchemy 1.4; remove if on 2.0+
+    poolclass=NullPool  # <--- This is the fix. Disables pooling entirely.
 )
 
 # Async session factory

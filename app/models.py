@@ -75,6 +75,7 @@ class Employee(EmployeeBase, table=True):
 
     skills: List[Skill] = Relationship(back_populates="employees", link_model=EmployeeSkillLink)
     teams: List["Team"] = Relationship(back_populates="members", link_model=TeamMemberLink)
+    tasks: List["Task"] = Relationship(back_populates="employee")
 
 class EmployeeCreate(EmployeeBase):
     pass
@@ -95,6 +96,8 @@ class ProjectBase(SQLModel):
     max_teams: Optional[int] = None
     min_team_size: Optional[int] = None
     max_team_size: Optional[int] = None
+    total_tasks: Optional[int] = Field(default=0, nullable=False)
+    completed_tasks: Optional[int] = Field(default=0, nullable=False)
 
 class Project(ProjectBase, table=True):
     __tablename__ = "projects"
@@ -105,6 +108,7 @@ class Project(ProjectBase, table=True):
 
     teams: List["Team"] = Relationship(back_populates="project")
     skills: List[Skill] = Relationship(back_populates="projects", link_model=ProjectSkillLink)
+    tasks: List["Task"] = Relationship(back_populates="project")
 
 class ProjectCreate(ProjectBase):
     pass
@@ -143,6 +147,42 @@ class TeamRead(TeamBase):
     id: int
     tenant_id: str
     created_at: datetime
+
+
+# --- Task Entity ---
+
+class TaskBase(SQLModel):
+    title: str = Field(sa_column=Column(String(100), nullable=False))
+    description: Optional[str] = Field(default=None, max_length=255)
+    completed: bool = Field(default=False, nullable=False)
+    project_id: int = Field(foreign_key="projects.id", nullable=False)
+    employee_id: Optional[int] = Field(default=None, foreign_key="employees.id")
+
+class Task(TaskBase, table=True):
+    __tablename__ = "tasks"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    tenant_id: str = Field(index=True, nullable=False)
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+    project: Project = Relationship(back_populates="tasks")
+    employee: Optional[Employee] = Relationship(back_populates="tasks")
+
+class TaskCreate(TaskBase):
+    pass
+
+class TaskRead(TaskBase):
+    id: int
+    tenant_id: str
+    created_at: datetime
+    updated_at: datetime
+
+class TaskUpdate(SQLModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    completed: Optional[bool] = None
+    project_id: Optional[int] = None
+    employee_id: Optional[int] = None
 
 
 # Enhanced schemas with relationships

@@ -19,6 +19,7 @@ from app.models import (
     EmployeeReadWithSkills,
     User,
     SkillType,
+    Task,
 )
 
 router = APIRouter(prefix="/employees", tags=["employees"])
@@ -270,6 +271,14 @@ async def delete_employee(
     )
     for link in team_links.scalars().all():
         await session.delete(link)
+
+    # Unassign employee from tasks
+    tasks_result = await session.execute(
+        select(Task).where(Task.employee_id == employee_id)
+    )
+    for task in tasks_result.scalars().all():
+        task.employee_id = None
+        session.add(task)
 
     await session.delete(db_employee)
     await session.commit()

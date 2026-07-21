@@ -19,6 +19,7 @@ from app.models import (
     ProjectReadWithSkills,
     User,
     TeamMemberLink,
+    Task,
 )
 
 router = APIRouter(prefix="/projects", tags=["projects"])
@@ -123,6 +124,13 @@ async def delete_project(
     )
     for link in skill_links.scalars().all():
         await session.delete(link)
+
+    # Delete associated tasks
+    tasks_result = await session.execute(
+        select(Task).where(Task.project_id == project_id)
+    )
+    for task in tasks_result.scalars().all():
+        await session.delete(task)
 
     teams_result = await session.execute(
         select(Team).where(Team.project_id == project_id)

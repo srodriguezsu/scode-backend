@@ -8,7 +8,7 @@ from sqlmodel import SQLModel
 load_dotenv()
 
 from app.database import engine
-from app.routers import employees, projects, teams, skills
+from app.routers import employees, projects, teams, skills, tasks
 from app.auth import fastapi_users, auth_backend
 from app.models import UserRead, UserCreate, UserUpdate
 
@@ -72,6 +72,7 @@ app.include_router(skills.router)
 app.include_router(employees.router)
 app.include_router(projects.router)
 app.include_router(teams.router)
+app.include_router(tasks.router)
 
 
 @app.get("/", tags=["Health"])
